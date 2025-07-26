@@ -22,6 +22,7 @@ dependencies = [
     "alembic>=1.8.1",
     "SQLAlchemy>=1.4.41",
     "python-dotenv>=0.21.0",
+    "akracer>=0.0.13"
 ]
 
 [project.optional-dependencies]
@@ -41,6 +42,7 @@ dev = [
     "alembic",
     "SQLAlchemy",
     "python-dotenv",
+    "akracer>=0.0.13"
 ]
 
 # 保留现有工具配置
