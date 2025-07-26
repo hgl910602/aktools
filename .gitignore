@@ -28,3 +28,7 @@ colors
 ./log/*
 .venv
 .uv
+
+aktools_log.log
+.env
+resource/dynamic_ip.json

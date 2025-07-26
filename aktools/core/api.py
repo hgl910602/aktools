@@ -7,6 +7,9 @@ Desc: HTTP 模式主文件
 import json
 import logging
 import urllib.parse
+import os  # 添加os模块
+from akshare import pro
+import requests  # 添加requests模块
 from logging.handlers import TimedRotatingFileHandler
 
 import akshare as ak
@@ -18,6 +21,7 @@ from fastapi.templating import Jinja2Templates
 
 from aktools.datasets import get_pyscript_html, get_template_path
 from aktools.login.user_login import User, get_current_active_user
+import proxy_utils
 
 app_core = APIRouter()
 
@@ -32,6 +36,36 @@ handler = TimedRotatingFileHandler(
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
+
+# === 猴子补丁：为requests添加全局代理 ===
+# 保存原始requests方法
+original_get = requests.get
+original_post = requests.post
+
+def set_proxy_config():
+    proxies = proxy_utils.get_proxy()
+    # 定义带代理的包装函数
+    def proxy_get(url, *args, **kwargs):
+        # 只有当环境变量设置了代理时才添加proxies参数
+        if proxies.get("http") or proxies.get("https"):
+            kwargs["proxies"] = proxies
+        return original_get(url, *args, **kwargs)
+
+    def proxy_post(url, *args, **kwargs):
+        if proxies.get("http") or proxies.get("https"):
+            kwargs["proxies"] = proxies
+        return original_post(url, *args, **kwargs)
+
+    requests.get = proxy_get
+    requests.post = proxy_post
+    
+def reset_proxy_config():
+    requests.get = original_get
+    requests.post = original_post
+
+# 覆盖requests的get和post方法
+
+# === 猴子补丁结束 ===
 
 # 使用日志记录器记录信息
 logger.info('这是一个信息级别的日志消息')
@@ -115,7 +149,12 @@ def root(request: Request, item_id: str):
     :rtype: json
     """
     interface_list = dir(ak)
-    decode_params = urllib.parse.unquote(str(request.query_params))
+    # 处理proxy参数
+    params = dict(request.query_params)
+    proxy = params.pop("proxy", False)
+    # 使用urllib.parse.urlencode处理参数编码和拼接
+    query_str = urllib.parse.urlencode(params) if params else ""
+    decode_params = urllib.parse.unquote(query_str)
     # print(decode_params)
     if item_id not in interface_list:
         logger.info("未找到该接口，请升级 AKShare 到最新版本并在文档中确认该接口的使用方式：https://akshare.akfamily.xyz")
@@ -136,9 +175,13 @@ def root(request: Request, item_id: str):
     else:
         eval_str = decode_params.replace("&", '", ').replace("=", '="') + '"'
         eval_str = eval_str.replace("+", " ")  # 处理传递的参数中带空格的情况
-    if not bool(request.query_params):
+    if not bool(params):
         try:
+            if proxy:
+                set_proxy_config()
             received_df = eval("ak." + item_id + "()")
+            if proxy:
+                reset_proxy_config()
             if received_df is None:
                 logger.info("该接口返回数据为空，请确认参数是否正确：https://akshare.akfamily.xyz")
                 return JSONResponse(
@@ -159,7 +202,11 @@ def root(request: Request, item_id: str):
         return JSONResponse(status_code=status.HTTP_200_OK, content=json.loads(temp_df))
     else:
         try:
+            if proxy:
+                set_proxy_config()
             received_df = eval("ak." + item_id + f"({eval_str})")
+            if proxy:
+                reset_proxy_config()
             if received_df is None:
                 logger.info("该接口返回数据为空，请确认参数是否正确：https://akshare.akfamily.xyz")
                 return JSONResponse(
