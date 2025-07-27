@@ -90,7 +90,13 @@ def root(
     :rtype: json
     """
     interface_list = dir(ak)
-    decode_params = urllib.parse.unquote(str(request.query_params))
+    # 处理proxy参数
+    params = dict(request.query_params)
+    proxy = params.pop("proxy", False)
+    # 使用urllib.parse.urlencode处理参数编码和拼接
+    query_str = urllib.parse.urlencode(params) if params else ""
+    decode_params = urllib.parse.unquote(query_str)
+    # decode_params = urllib.parse.unquote(str(request.query_params))
     # print(decode_params)
     if item_id not in interface_list:
         return JSONResponse(
@@ -100,9 +106,13 @@ def root(
             },
         )
     eval_str = decode_params.replace("&", '", ').replace("=", '="') + '"'
-    if not bool(request.query_params):
+    if not bool(params):
         try:
+            if proxy:
+                set_proxy_config()
             received_df = eval("ak." + item_id + "()")
+            if proxy:
+                reset_proxy_config()
             if received_df is None:
                 return JSONResponse(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -119,7 +129,11 @@ def root(
         return JSONResponse(status_code=status.HTTP_200_OK, content=json.loads(temp_df))
     else:
         try:
+            if proxy:
+                set_proxy_config()
             received_df = eval("ak." + item_id + f"({eval_str})")
+            if proxy:
+                reset_proxy_config()
             if received_df is None:
                 return JSONResponse(
                     status_code=status.HTTP_404_NOT_FOUND,
